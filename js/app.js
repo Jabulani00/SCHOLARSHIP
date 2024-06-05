@@ -19,14 +19,12 @@ async function fetchScholarships() {
     try {
         const querySnapshot = await getDocs(collection(db, 'scholarships'));
         const scholarships = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
         const scholarshipsContainer = document.querySelector('.scholarship-list .row');
         scholarshipsContainer.innerHTML = ''; // Clear existing content
 
         for (let scholarship of scholarships) {
             const filesSnapshot = await getDocs(collection(db, 'scholarshipFiles'));
             const filesData = filesSnapshot.docs.find(doc => doc.data().scholarshipId === scholarship.id)?.data().files || [];
-
             const scholarshipCard = document.createElement('div');
             scholarshipCard.className = 'col-md-4 mb-4';
             scholarshipCard.innerHTML = `
@@ -43,6 +41,7 @@ async function fetchScholarships() {
         }
 
         // Add event listeners to the "Learn More" buttons
+        const pdfViewer = document.getElementById('pdf-viewer');
         document.querySelectorAll('.btn-primary').forEach(button => {
             button.addEventListener('click', async (event) => {
                 const scholarshipId = event.target.getAttribute('data-id');
@@ -57,10 +56,31 @@ async function fetchScholarships() {
                     <p><strong>Deadline:</strong> ${scholarship.deadline}</p>
                     <p><strong>Amount:</strong> $${scholarship.amount}</p>
                     <p><strong>Documents:</strong></p>
-                    <ul>
-                        ${filesData.map(file => `<li><a href="${file.url}" target="_blank">${file.fileName}</a></li>`).join('')}
-                    </ul>
                 `;
+
+                pdfViewer.innerHTML = ''; // Clear the existing PDF viewer
+
+                if (filesData.length > 0) {
+                    const pdfUrl = await getDownloadURL(ref(storage, filesData[0].path));
+                    const pdfData = await fetch(pdfUrl).then(response => response.arrayBuffer());
+
+                    pdfjsLib.getDocument(pdfData).promise.then(pdf => {
+                        pdf.getPage(1).then(page => {
+                            const scale = 1.5;
+                            const viewport = page.getViewport({ scale });
+                            const canvas = document.createElement('canvas');
+                            const context = canvas.getContext('2d');
+                            canvas.height = viewport.height;
+                            canvas.width = viewport.width;
+                            pdfViewer.appendChild(canvas);
+                            page.render({ canvasContext: context, viewport });
+                        });
+                    }).catch(error => {
+                        console.error('Error rendering PDF: ', error);
+                    });
+                } else {
+                    pdfViewer.innerHTML = 'No PDF file available for this scholarship.';
+                }
             });
         });
     } catch (error) {
